@@ -245,6 +245,16 @@ This is a prototype project. Contributions welcome for:
 - UI/UX enhancements
 - Feature suggestions
 
+## Deployment
+
+For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+**Quick Start:**
+1. **Frontend**: Deploy to [Vercel](https://vercel.com) - auto-detects Next.js
+2. **Backend**: Deploy to [Render](https://render.com) or [Railway](https://railway.app)
+
+Set environment variables as described in the deployment guide.
+
 ## License
 
 MIT License - see LICENSE file for details

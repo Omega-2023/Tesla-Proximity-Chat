@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: tesla-proximity-chat-backend
+    runtime: node
+    plan: free
+    buildCommand: echo "No build needed for Node.js server"
+    startCommand: node server/index.js
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_CLIENT_URL
+        value: https://your-nextjs-app.vercel.app
