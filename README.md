@@ -105,7 +105,25 @@ When prompted, allow the browser to access your location.
 
 ## Usage
 
-### Getting Started
+### 🎭 Demo Mode (No Backend Required)
+
+**Perfect for testing and demonstration!** The app includes a built-in demo mode that works entirely in the frontend without requiring a backend server.
+
+To enable demo mode:
+1. Click the **"🎭 Try Demo Mode (No Backend Required)"** button on the homepage
+2. Or set the environment variable: `NEXT_PUBLIC_DEMO_MODE=true`
+3. The app will simulate nearby users and messages automatically
+
+**Demo mode features:**
+- ✅ Works without any backend server
+- ✅ Simulated nearby Tesla drivers
+- ✅ Automatic message simulation from other users
+- ✅ All UI features work (speed lock, preset messages, etc.)
+- ✅ Perfect for demonstrations, testing, or development
+
+To switch back to live mode, click **"Switch to Live Mode"** in the demo mode banner.
+
+### Getting Started (Live Mode)
 
 1. **Enter a nickname** - Choose a display name (max 20 characters)
 2. **Click "Join"** - Connect to the chat server
@@ -249,11 +267,19 @@ This is a prototype project. Contributions welcome for:
 
 For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
-**Quick Start:**
+**Quick Start Options:**
+
+### Option 1: Demo Mode (Easiest - No Backend!)
+1. **Frontend Only**: Deploy to [Vercel](https://vercel.com) - auto-detects Next.js
+2. **Enable Demo Mode**: Set environment variable `NEXT_PUBLIC_DEMO_MODE=true` in Vercel
+3. **That's it!** The app works fully without any backend
+
+### Option 2: Full Deployment
 1. **Frontend**: Deploy to [Vercel](https://vercel.com) - auto-detects Next.js
 2. **Backend**: Deploy to [Render](https://render.com) or [Railway](https://railway.app)
+3. Set environment variables as described in the deployment guide
 
-Set environment variables as described in the deployment guide.
+**Note**: For demonstrations or testing, Option 1 (Demo Mode) is recommended as it's much simpler and doesn't require backend deployment.
 
 ## License
 
