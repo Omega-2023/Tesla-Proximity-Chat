@@ -29,6 +29,17 @@ const PRESET_MESSAGES = [
   { text: 'looking good!', label: 'Looking Good' },
 ];
 
+// Demo mode - works without backend
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || 
+                  typeof window !== 'undefined' && localStorage.getItem('demoMode') === 'true';
+
+// Mock nearby users for demo
+const MOCK_USERS = [
+  { nickname: 'TeslaDriver1', speed: 0 },
+  { nickname: 'Model3Owner', speed: 5 },
+  { nickname: 'ElectricRide', speed: 0 },
+];
+
 export default function Home() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [nickname, setNickname] = useState('');
@@ -40,11 +51,24 @@ export default function Home() {
   const [isSharingLocation, setIsSharingLocation] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
+  const [demoMode, setDemoMode] = useState(DEMO_MODE);
   const watchIdRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize Socket.io connection
+  // Initialize Socket.io connection (only if not in demo mode)
   useEffect(() => {
+    if (demoMode) {
+      // Demo mode - simulate connection
+      setIsConnecting(true);
+      setTimeout(() => {
+        setIsConnected(true);
+        setIsConnecting(false);
+        setError('');
+      }, 1000);
+      return;
+    }
+
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
     console.log('Connecting to:', socketUrl);
     setIsConnecting(true);
@@ -81,7 +105,17 @@ export default function Home() {
       console.error('Connection error:', err);
       setIsConnected(false);
       setIsConnecting(false);
-      setError(`Cannot connect to server. Please check if the backend is running at ${socketUrl}`);
+      // Auto-switch to demo mode if backend unavailable
+      if (!localStorage.getItem('demoMode')) {
+        setError(`Cannot connect to server. Switching to demo mode...`);
+        setTimeout(() => {
+          setDemoMode(true);
+          localStorage.setItem('demoMode', 'true');
+          window.location.reload();
+        }, 2000);
+      } else {
+        setError(`Cannot connect to server. Please check if the backend is running at ${socketUrl}`);
+      }
     });
 
     newSocket.on('error', (data: { message: string }) => {
@@ -98,22 +132,25 @@ export default function Home() {
     });
 
     newSocket.on('new-message', (message: Message) => {
-      setMessages(prev => [...prev, message].slice(-50)); // Keep last 50 messages
+      setMessages(prev => [...prev, message].slice(-50));
       scrollToBottom();
     });
 
     newSocket.on('user-left', () => {
-      // Server will send updated nearby-users, so we just log it
       console.log('User left proximity zone');
     });
 
     setSocket(newSocket);
 
-    // Connection timeout
     const timeout = setTimeout(() => {
-      if (!newSocket.connected) {
+      if (!newSocket.connected && !demoMode) {
         setIsConnecting(false);
-        setError(`Cannot connect to backend server. Make sure the backend is deployed and running. Expected URL: ${socketUrl}`);
+        // Offer to switch to demo mode
+        if (!localStorage.getItem('demoMode')) {
+          setError(`Cannot connect to backend server. Would you like to try demo mode?`);
+        } else {
+          setError(`Cannot connect to backend server. Make sure the backend is deployed and running. Expected URL: ${socketUrl}`);
+        }
       }
     }, 5000);
 
@@ -124,7 +161,43 @@ export default function Home() {
       }
       newSocket.close();
     };
-  }, []);
+  }, [demoMode]);
+
+  // Demo mode: Simulate nearby users
+  useEffect(() => {
+    if (demoMode && hasJoined && isSharingLocation) {
+      // Simulate nearby users
+      const mockUsers: User[] = MOCK_USERS.map((user, idx) => ({
+        socketId: `demo-${idx}`,
+        nickname: user.nickname,
+        lat: 0,
+        lng: 0,
+        speed: user.speed,
+      }));
+      setNearbyUsers(mockUsers);
+
+      // Simulate messages from other users occasionally
+      demoIntervalRef.current = setInterval(() => {
+        if (Math.random() > 0.7 && messages.length < 20) {
+          const randomUser = MOCK_USERS[Math.floor(Math.random() * MOCK_USERS.length)];
+          const randomMessage = PRESET_MESSAGES[Math.floor(Math.random() * PRESET_MESSAGES.length)];
+          setMessages(prev => [...prev, {
+            socketId: `demo-${randomUser.nickname}`,
+            nickname: randomUser.nickname,
+            message: randomMessage.text,
+            timestamp: Date.now(),
+          }].slice(-50));
+          scrollToBottom();
+        }
+      }, 8000);
+
+      return () => {
+        if (demoIntervalRef.current) {
+          clearInterval(demoIntervalRef.current);
+        }
+      };
+    }
+  }, [demoMode, hasJoined, isSharingLocation, messages.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -135,11 +208,16 @@ export default function Home() {
       setError('Please enter a nickname');
       return;
     }
-    if (!socket || !isConnected) {
+    if (!demoMode && (!socket || !isConnected)) {
       setError('Not connected to server. Please wait for connection...');
       return;
     }
-    if (socket) {
+    
+    if (demoMode) {
+      // Demo mode - just set joined
+      setHasJoined(true);
+      setError('');
+    } else if (socket) {
       socket.emit('join', { nickname: nickname.trim() });
     }
   };
@@ -153,15 +231,19 @@ export default function Home() {
     setIsSharingLocation(true);
     setError('');
 
-    // Request location updates every 3 seconds
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
         const speed = position.coords.speed 
-          ? (position.coords.speed * 2.237) // Convert m/s to mph
+          ? (position.coords.speed * 2.237)
           : 0;
 
         setCurrentSpeed(speed);
+
+        if (demoMode) {
+          // In demo mode, just update speed
+          return;
+        }
 
         if (socket && isConnected) {
           socket.emit('location-update', {
@@ -192,13 +274,32 @@ export default function Home() {
   };
 
   const sendMessage = (messageText: string) => {
-    if (!socket || !hasJoined) {
+    if (!hasJoined) {
       setError('You must join first');
       return;
     }
 
     if (currentSpeed > 10) {
       setError(`Messaging disabled while driving (speed: ${currentSpeed.toFixed(1)} mph)`);
+      return;
+    }
+
+    if (demoMode) {
+      // Demo mode - add to messages locally
+      const newMessage: Message = {
+        socketId: 'demo-self',
+        nickname: nickname,
+        message: messageText,
+        timestamp: Date.now(),
+      };
+      setMessages(prev => [...prev, newMessage].slice(-50));
+      scrollToBottom();
+      setError('');
+      return;
+    }
+
+    if (!socket || !isConnected) {
+      setError('You must join first');
       return;
     }
 
@@ -213,28 +314,62 @@ export default function Home() {
     });
   };
 
+  const toggleDemoMode = () => {
+    const newDemoMode = !demoMode;
+    setDemoMode(newDemoMode);
+    localStorage.setItem('demoMode', newDemoMode.toString());
+    window.location.reload();
+  };
+
   return (
     <div className="container">
       <header className="header">
         <h1>🚗 Tesla Proximity Chat</h1>
         <p>Connect with nearby Tesla drivers safely</p>
+        {demoMode && (
+          <div className="warning" style={{ marginTop: '20px', maxWidth: '600px', margin: '20px auto' }}>
+            <span>🎭</span>
+            <div>
+              <strong>Demo Mode Active</strong>
+              <p style={{ marginTop: '8px', fontSize: '14px', opacity: 0.9 }}>
+                Running in demo mode without backend. Some features are simulated.
+              </p>
+              <button 
+                onClick={toggleDemoMode}
+                className="button button-secondary"
+                style={{ marginTop: '12px', padding: '8px 16px', fontSize: '14px' }}
+              >
+                Switch to Live Mode
+              </button>
+            </div>
+          </div>
+        )}
+        {!demoMode && localStorage.getItem('demoMode') !== 'true' && (
+          <button 
+            onClick={toggleDemoMode}
+            className="button button-secondary"
+            style={{ marginTop: '20px', padding: '10px 20px', fontSize: '14px' }}
+          >
+            🎭 Try Demo Mode (No Backend Required)
+          </button>
+        )}
       </header>
 
       {/* Connection Status */}
-      {isConnecting && (
+      {!demoMode && isConnecting && (
         <div className="warning">
           <span>⏳</span>
           <span>Connecting to server...</span>
         </div>
       )}
 
-      {!isConnecting && !isConnected && (
+      {!demoMode && !isConnecting && !isConnected && (
         <div className="error">
           <span>⚠️</span>
           <div>
             <strong>Not Connected to Backend Server</strong>
             <p style={{ marginTop: '8px', fontSize: '14px', opacity: 0.9 }}>
-              {error || 'The backend server is not running. Please deploy the backend to Render, Railway, or Heroku and update the NEXT_PUBLIC_SOCKET_URL environment variable in Vercel.'}
+              {error || 'The backend server is not running. Click "Try Demo Mode" above to test without a backend.'}
             </p>
             <p style={{ marginTop: '8px', fontSize: '12px', opacity: 0.7 }}>
               Expected URL: {process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001'}
@@ -243,7 +378,7 @@ export default function Home() {
         </div>
       )}
 
-      {error && isConnected && (
+      {error && (demoMode || isConnected) && (
         <div className="error">
           <span>⚠️</span>
           <span>{error}</span>
@@ -267,16 +402,11 @@ export default function Home() {
             <button 
               className="button" 
               onClick={handleJoin}
-              disabled={!isConnected || isConnecting}
+              disabled={!demoMode && (!isConnected || isConnecting)}
             >
-              {isConnecting ? 'Connecting...' : 'Join'}
+              {isConnecting && !demoMode ? 'Connecting...' : 'Join'}
             </button>
           </div>
-          {!isConnected && (
-            <p style={{ marginTop: '16px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)', fontSize: '14px' }}>
-              ⚠️ You need to deploy the backend server first
-            </p>
-          )}
         </div>
       )}
 
@@ -288,11 +418,12 @@ export default function Home() {
               <div style={{ flex: 1 }}>
                 <h2 style={{ fontSize: '24px', marginBottom: '12px', fontWeight: '600' }}>
                   Welcome, <span style={{ color: '#3e6ae1' }}>{nickname}</span>!
+                  {demoMode && <span className="badge" style={{ marginLeft: '12px' }}>DEMO</span>}
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span className={`status ${isConnected ? 'online' : 'offline'}`}></span>
+                  <span className={`status ${(demoMode || isConnected) ? 'online' : 'offline'}`}></span>
                   <span style={{ fontWeight: '500' }}>
-                    {isConnected ? 'Connected' : 'Disconnected'}
+                    {demoMode ? 'Demo Mode' : (isConnected ? 'Connected' : 'Disconnected')}
                   </span>
                   {currentSpeed > 0 && (
                     <span className="badge">
@@ -340,6 +471,11 @@ export default function Home() {
                   <div style={{ fontSize: '48px', marginBottom: '16px' }}>🚗</div>
                   <p style={{ fontSize: '16px' }}>No nearby drivers yet.</p>
                   <p style={{ fontSize: '14px', marginTop: '8px', opacity: 0.7 }}>Share your location to find others!</p>
+                  {demoMode && (
+                    <p style={{ fontSize: '12px', marginTop: '8px', opacity: 0.5, fontStyle: 'italic' }}>
+                      (Demo: Share location to see simulated nearby users)
+                    </p>
+                  )}
                 </div>
               ) : (
                 <ul className="user-list">
@@ -372,12 +508,17 @@ export default function Home() {
                     <div style={{ fontSize: '48px', marginBottom: '16px' }}>💭</div>
                     <p style={{ fontSize: '16px' }}>No messages yet.</p>
                     <p style={{ fontSize: '14px', marginTop: '8px', opacity: 0.7 }}>Send a message to nearby drivers!</p>
+                    {demoMode && (
+                      <p style={{ fontSize: '12px', marginTop: '8px', opacity: 0.5, fontStyle: 'italic' }}>
+                        (Demo: Messages from other users will appear automatically)
+                      </p>
+                    )}
                   </div>
                 ) : (
                   messages.map((msg, idx) => (
                     <div
                       key={idx}
-                      className={`message-item ${msg.socketId === socket?.id ? 'own' : 'other'}`}
+                      className={`message-item ${msg.socketId === socket?.id || msg.socketId === 'demo-self' ? 'own' : 'other'}`}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                         <strong style={{ fontSize: '14px', fontWeight: '600' }}>{msg.nickname}</strong>
@@ -406,7 +547,7 @@ export default function Home() {
                   key={preset.text}
                   className="button button-secondary preset-button"
                   onClick={() => sendMessage(preset.text)}
-                  disabled={!isSharingLocation || currentSpeed > 10 || !isConnected}
+                  disabled={!isSharingLocation || currentSpeed > 10 || (!demoMode && !isConnected)}
                 >
                   <span>{preset.text}</span>
                   <span className="preset-button-label">{preset.label}</span>
@@ -420,7 +561,7 @@ export default function Home() {
       <footer className="footer">
         <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '12px' }}>🚗 Tesla Proximity Chat v0.1.0</p>
         <p style={{ fontSize: '13px', opacity: 0.7 }}>
-          Messages are ephemeral and only visible to nearby drivers. Always drive safely.
+          {demoMode ? 'Running in demo mode - no backend required' : 'Messages are ephemeral and only visible to nearby drivers. Always drive safely.'}
         </p>
       </footer>
     </div>
