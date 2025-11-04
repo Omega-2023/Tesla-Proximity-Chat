@@ -5,8 +5,41 @@ This guide will help you deploy the Tesla Proximity Chat application to producti
 ## Architecture Overview
 
 The application consists of two parts:
-1. **Frontend**: Next.js app (deploy to Vercel)
+1. **Frontend**: Next.js app (deploy to GitHub Pages, Vercel, or Netlify)
 2. **Backend**: Socket.io server (deploy to Render, Railway, or Heroku)
+
+---
+
+## Option 0: Deploy to GitHub Pages (Frontend) - Easiest! 🎉
+
+### Frontend Deployment to GitHub Pages
+
+1. **Enable GitHub Pages in your repository**
+   - Go to your repository on GitHub
+   - Click **Settings** → **Pages**
+   - Under "Source", select **GitHub Actions**
+
+2. **Set up environment variable (optional)**
+   - Go to **Settings** → **Secrets and variables** → **Actions**
+   - Click **New repository secret**
+   - Name: `NEXT_PUBLIC_SOCKET_URL`
+   - Value: Your backend URL (e.g., `https://your-backend.onrender.com`)
+   - If not set, it will default to `http://localhost:3001` (update in code after backend is deployed)
+
+3. **Deploy automatically**
+   - The GitHub Actions workflow will automatically build and deploy on every push to `main`
+   - Your site will be live at: `https://omega-2023.github.io/Tesla-Proximity-Chat/`
+   - You can also manually trigger it: **Actions** tab → **Deploy to GitHub Pages** → **Run workflow**
+
+4. **Update backend URL after deployment**
+   - Once your backend is deployed, update the secret `NEXT_PUBLIC_SOCKET_URL`
+   - Or manually update it in the workflow file and push again
+
+### Backend Deployment (Still needed - Render/Railway/Heroku)
+
+The backend still needs to be deployed separately since GitHub Pages only serves static files. See "Backend Deployment (Render)" section below.
+
+---
 
 ## Option 1: Deploy to Vercel (Frontend) + Render (Backend) - Recommended
 
