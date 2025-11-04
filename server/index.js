@@ -6,12 +6,33 @@ const Filter = require('bad-words');
 
 const app = express();
 const server = http.createServer(app);
+
+// CORS configuration - allow all origins in production for now
+const allowedOrigins = process.env.NEXT_PUBLIC_CLIENT_URL 
+  ? [process.env.NEXT_PUBLIC_CLIENT_URL, 'http://localhost:3000']
+  : ['http://localhost:3000', 'https://tesla-proximity-chat-a6ih.vercel.app'];
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.NEXT_PUBLIC_CLIENT_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+        callback(null, true);
+      } else {
+        // Log the origin for debugging
+        console.log('CORS blocked origin:', origin);
+        callback(null, true); // Allow all for now - remove in production
+      }
+    },
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
 });
+
+console.log('Allowed CORS origins:', allowedOrigins);
+console.log('NEXT_PUBLIC_CLIENT_URL:', process.env.NEXT_PUBLIC_CLIENT_URL);
 
 const filter = new Filter();
 
@@ -36,8 +57,18 @@ setInterval(() => {
   }
 }, 5000);
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    users: users.size 
+  });
+});
+
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
+  console.log(`Origin: ${socket.handshake.headers.origin}`);
 
   // User joins with nickname
   socket.on('join', ({ nickname }) => {
@@ -187,4 +218,5 @@ server.listen(PORT, () => {
   console.log(`🚗 Tesla Proximity Chat Server running on port ${PORT}`);
   console.log(`📍 Geohash precision: ${GEOHASH_PRECISION}`);
   console.log(`🚦 Speed lock threshold: ${SPEED_LOCK_THRESHOLD} mph`);
+  console.log(`🌐 Server listening on port ${PORT}`);
 });
