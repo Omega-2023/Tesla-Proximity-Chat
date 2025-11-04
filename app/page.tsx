@@ -38,22 +38,50 @@ export default function Home() {
   const [error, setError] = useState<string>('');
   const [currentSpeed, setCurrentSpeed] = useState<number>(0);
   const [isSharingLocation, setIsSharingLocation] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(true);
   const watchIdRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Initialize Socket.io connection
   useEffect(() => {
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
-    const newSocket = io(socketUrl);
+    console.log('Connecting to:', socketUrl);
+    setIsConnecting(true);
+    setError('');
+    
+    const newSocket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
     
     newSocket.on('connect', () => {
       console.log('Connected to server');
+      setIsConnected(true);
+      setIsConnecting(false);
       setError('');
     });
 
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from server');
-      setError('Disconnected from server. Reconnecting...');
+    newSocket.on('disconnect', (reason) => {
+      console.log('Disconnected from server:', reason);
+      setIsConnected(false);
+      setIsConnecting(false);
+      if (reason === 'io server disconnect') {
+        setError('Server disconnected. Please refresh the page.');
+      } else if (reason === 'io client disconnect') {
+        // User manually disconnected
+      } else {
+        setError('Disconnected from server. Trying to reconnect...');
+      }
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error('Connection error:', err);
+      setIsConnected(false);
+      setIsConnecting(false);
+      setError(`Cannot connect to server. Please check if the backend is running at ${socketUrl}`);
     });
 
     newSocket.on('error', (data: { message: string }) => {
@@ -81,7 +109,16 @@ export default function Home() {
 
     setSocket(newSocket);
 
+    // Connection timeout
+    const timeout = setTimeout(() => {
+      if (!newSocket.connected) {
+        setIsConnecting(false);
+        setError(`Cannot connect to backend server. Make sure the backend is deployed and running. Expected URL: ${socketUrl}`);
+      }
+    }, 5000);
+
     return () => {
+      clearTimeout(timeout);
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
@@ -96,6 +133,10 @@ export default function Home() {
   const handleJoin = () => {
     if (!nickname.trim()) {
       setError('Please enter a nickname');
+      return;
+    }
+    if (!socket || !isConnected) {
+      setError('Not connected to server. Please wait for connection...');
       return;
     }
     if (socket) {
@@ -122,7 +163,7 @@ export default function Home() {
 
         setCurrentSpeed(speed);
 
-        if (socket) {
+        if (socket && isConnected) {
           socket.emit('location-update', {
             lat: latitude,
             lng: longitude,
@@ -179,7 +220,30 @@ export default function Home() {
         <p>Connect with nearby Tesla drivers safely</p>
       </header>
 
-      {error && (
+      {/* Connection Status */}
+      {isConnecting && (
+        <div className="warning">
+          <span>⏳</span>
+          <span>Connecting to server...</span>
+        </div>
+      )}
+
+      {!isConnecting && !isConnected && (
+        <div className="error">
+          <span>⚠️</span>
+          <div>
+            <strong>Not Connected to Backend Server</strong>
+            <p style={{ marginTop: '8px', fontSize: '14px', opacity: 0.9 }}>
+              {error || 'The backend server is not running. Please deploy the backend to Render, Railway, or Heroku and update the NEXT_PUBLIC_SOCKET_URL environment variable in Vercel.'}
+            </p>
+            <p style={{ marginTop: '8px', fontSize: '12px', opacity: 0.7 }}>
+              Expected URL: {process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {error && isConnected && (
         <div className="error">
           <span>⚠️</span>
           <span>{error}</span>
@@ -200,10 +264,19 @@ export default function Home() {
               onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
               maxLength={20}
             />
-            <button className="button" onClick={handleJoin}>
-              Join
+            <button 
+              className="button" 
+              onClick={handleJoin}
+              disabled={!isConnected || isConnecting}
+            >
+              {isConnecting ? 'Connecting...' : 'Join'}
             </button>
           </div>
+          {!isConnected && (
+            <p style={{ marginTop: '16px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)', fontSize: '14px' }}>
+              ⚠️ You need to deploy the backend server first
+            </p>
+          )}
         </div>
       )}
 
@@ -217,8 +290,10 @@ export default function Home() {
                   Welcome, <span style={{ color: '#3e6ae1' }}>{nickname}</span>!
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span className="status online"></span>
-                  <span style={{ fontWeight: '500' }}>Connected</span>
+                  <span className={`status ${isConnected ? 'online' : 'offline'}`}></span>
+                  <span style={{ fontWeight: '500' }}>
+                    {isConnected ? 'Connected' : 'Disconnected'}
+                  </span>
                   {currentSpeed > 0 && (
                     <span className="badge">
                       🚗 {currentSpeed.toFixed(1)} mph
@@ -331,7 +406,7 @@ export default function Home() {
                   key={preset.text}
                   className="button button-secondary preset-button"
                   onClick={() => sendMessage(preset.text)}
-                  disabled={!isSharingLocation || currentSpeed > 10}
+                  disabled={!isSharingLocation || currentSpeed > 10 || !isConnected}
                 >
                   <span>{preset.text}</span>
                   <span className="preset-button-label">{preset.label}</span>
