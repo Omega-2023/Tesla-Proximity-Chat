@@ -30,8 +30,12 @@ const PRESET_MESSAGES = [
 ];
 
 // Demo mode - works without backend
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || 
-                  typeof window !== 'undefined' && localStorage.getItem('demoMode') === 'true';
+// Only check localStorage on client side to avoid SSR errors
+const getInitialDemoMode = () => {
+  if (typeof window === 'undefined') return false;
+  return process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || 
+         localStorage.getItem('demoMode') === 'true';
+};
 
 // Mock nearby users for demo
 const MOCK_USERS = [
@@ -51,23 +55,33 @@ export default function Home() {
   const [isSharingLocation, setIsSharingLocation] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
-  const [demoMode, setDemoMode] = useState(DEMO_MODE);
+  const [demoMode, setDemoMode] = useState(false); // Initialize as false, will be set in useEffect
   const watchIdRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize Socket.io connection (only if not in demo mode)
+  // Initialize demo mode on client side only
   useEffect(() => {
-    if (demoMode) {
-      // Demo mode - simulate connection
-      setIsConnecting(true);
-      setTimeout(() => {
-        setIsConnected(true);
-        setIsConnecting(false);
-        setError('');
-      }, 1000);
-      return;
-    }
+    const initialDemoMode = getInitialDemoMode();
+    setDemoMode(initialDemoMode);
+  }, []);
+
+  // Demo mode connection simulation
+  useEffect(() => {
+    if (!demoMode) return;
+    
+    // Demo mode - simulate connection
+    setIsConnecting(true);
+    setTimeout(() => {
+      setIsConnected(true);
+      setIsConnecting(false);
+      setError('');
+    }, 1000);
+  }, [demoMode]);
+
+  // Real socket connection (only if not in demo mode)
+  useEffect(() => {
+    if (demoMode) return; // Skip if in demo mode
 
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
     console.log('Connecting to:', socketUrl);
@@ -106,12 +120,14 @@ export default function Home() {
       setIsConnected(false);
       setIsConnecting(false);
       // Auto-switch to demo mode if backend unavailable
-      if (!localStorage.getItem('demoMode')) {
+      if (typeof window !== 'undefined' && !localStorage.getItem('demoMode')) {
         setError(`Cannot connect to server. Switching to demo mode...`);
         setTimeout(() => {
-          setDemoMode(true);
-          localStorage.setItem('demoMode', 'true');
-          window.location.reload();
+          if (typeof window !== 'undefined') {
+            setDemoMode(true);
+            localStorage.setItem('demoMode', 'true');
+            window.location.reload();
+          }
         }, 2000);
       } else {
         setError(`Cannot connect to server. Please check if the backend is running at ${socketUrl}`);
@@ -146,7 +162,7 @@ export default function Home() {
       if (!newSocket.connected && !demoMode) {
         setIsConnecting(false);
         // Offer to switch to demo mode
-        if (!localStorage.getItem('demoMode')) {
+        if (typeof window !== 'undefined' && !localStorage.getItem('demoMode')) {
           setError(`Cannot connect to backend server. Would you like to try demo mode?`);
         } else {
           setError(`Cannot connect to backend server. Make sure the backend is deployed and running. Expected URL: ${socketUrl}`);
@@ -315,6 +331,7 @@ export default function Home() {
   };
 
   const toggleDemoMode = () => {
+    if (typeof window === 'undefined') return;
     const newDemoMode = !demoMode;
     setDemoMode(newDemoMode);
     localStorage.setItem('demoMode', newDemoMode.toString());
@@ -344,7 +361,7 @@ export default function Home() {
             </div>
           </div>
         )}
-        {!demoMode && localStorage.getItem('demoMode') !== 'true' && (
+        {!demoMode && typeof window !== 'undefined' && localStorage.getItem('demoMode') !== 'true' && (
           <button 
             onClick={toggleDemoMode}
             className="button button-secondary"
