@@ -283,7 +283,9 @@ For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## License
 
-MIT License - see LICENSE file for details
+Copyright (c) 2024 Omega Ndoh Nambo. All Rights Reserved.
+
+This is a personal project. Unauthorized use, copying, or distribution is prohibited.
 
 ## Acknowledgments
 
